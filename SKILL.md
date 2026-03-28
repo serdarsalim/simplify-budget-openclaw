@@ -1,6 +1,6 @@
 ---
 name: simplify-budget
-description: "Log expenses to Simplify Budget Google Sheet via exec. Workflow: 1) Run: bash ~/.openclaw/skills/simplify-budget/scripts/get_categories.sh (returns stableId<TAB>fullName lines). 2) Match description to closest category name (coffee/restaurant=Dining Out, supermarket=Groceries, uber/taxi=Transport). 3) Run: bash ~/.openclaw/skills/simplify-budget/scripts/write_expense.sh AMOUNT \"FULL_CATEGORY_NAME\" \"DESCRIPTION\" YYYY-MM-DD. Default date=today, account=Cash. GOOGLE_SA_FILE and SPREADSHEET_ID are pre-set. Confirm to user when done."
+description: "Log expenses to Simplify Budget Google Sheet via exec. Workflow: 1) Run: bash ~/.openclaw/skills/simplify-budget/scripts/get_categories.sh (returns stableId<TAB>fullName lines). 2) Match description to closest category name (coffee/restaurant=Dining Out, supermarket=Groceries, uber/taxi=Transport). 3) Run: bash ~/.openclaw/skills/simplify-budget/scripts/write_expense.sh AMOUNT STABLEID \"DESCRIPTION\" YYYY-MM-DD (STABLEID is the number from column 1 of step 1, e.g. 4). Default date=today, account=Cash. GOOGLE_SA_FILE and SPREADSHEET_ID are pre-set. Confirm to user when done."
 version: 1.0.0
 user-invocable: true
 metadata:
@@ -60,7 +60,7 @@ When the user provides an expense (amount + description, with optional date/acco
 2. Extract from the user's message:
    - `amount` — numeric (required). Strip currency symbols. If they say "5 bucks" use 5, "14 euros" use 14.
    - `description` — what they bought/paid for (required)
-   - `category` — match to the fetched category list using the rules above
+   - `category` — match to the fetched category list using the rules above; use the stableId (the number before the tab, e.g. `4`) NOT the fullName
    - `date` — in YYYY-MM-DD format. Default to today if not specified.
    - `account` — default to "Cash" if not specified
 
@@ -69,7 +69,7 @@ When the user provides an expense (amount + description, with optional date/acco
 
 4. Write the expense:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/write_expense.sh "<amount>" "<category_fullname>" "<description>" "<YYYY-MM-DD>" "<account>"
+   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/write_expense.sh "<amount>" "<stableId>" "<description>" "<YYYY-MM-DD>" "<account>"
    ```
 
 5. Confirm to the user in a friendly, concise way:
