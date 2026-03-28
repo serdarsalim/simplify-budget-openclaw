@@ -45,7 +45,7 @@ while (($#)); do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=/Users/slm/.openclaw/skills/simplify-budget/scripts/expense_lib.sh
+# shellcheck source=./expense_lib.sh
 source "$SCRIPT_DIR/expense_lib.sh"
 
 DATA="$(fetch_recurring_values)"

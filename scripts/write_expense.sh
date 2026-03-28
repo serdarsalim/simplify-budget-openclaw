@@ -16,7 +16,7 @@ ACCOUNT="${5:-Cash}"
 NOTES="${6:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=/Users/slm/.openclaw/skills/simplify-budget/scripts/expense_lib.sh
+# shellcheck source=./expense_lib.sh
 source "$SCRIPT_DIR/expense_lib.sh"
 
 CATEGORY="$(normalize_category_formula "$CATEGORY_RAW")"

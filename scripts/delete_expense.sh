@@ -11,7 +11,7 @@ fi
 TRANSACTION_ID="$1"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=/Users/slm/.openclaw/skills/simplify-budget/scripts/expense_lib.sh
+# shellcheck source=./expense_lib.sh
 source "$SCRIPT_DIR/expense_lib.sh"
 
 ROW_JSON="$(find_expense_row_json "$TRANSACTION_ID")" || {
