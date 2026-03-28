@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes a new expense row to the Expenses sheet
-# Usage: write_expense.sh <amount> <stableId> <description> <YYYY-MM-DD> [account]
+# Usage: write_expense.sh <amount> =category<stableId> <description> <YYYY-MM-DD> [account]
 set -euo pipefail
 
 AMOUNT="$1"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Updates an existing expense row by transaction ID
-# Usage: update_expense.sh <transaction_id> <amount> <stableId> <description> <YYYY-MM-DD> [account]
+# Usage: update_expense.sh <transaction_id> <amount> =category<stableId> <description> <YYYY-MM-DD> [account]
 set -euo pipefail
 
 TRANSACTION_ID="$1"
