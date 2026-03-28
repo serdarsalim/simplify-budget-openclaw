@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes a new expense row to the Expenses sheet
-# Usage: write_expense.sh <amount> =category<stableId> <description> <YYYY-MM-DD> [account]
+# Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account]
 set -euo pipefail
 
 AMOUNT="$1"
@@ -8,6 +8,11 @@ CATEGORY="$2"
 DESCRIPTION="$3"
 DATE_INPUT="$4"
 ACCOUNT="${5:-Cash}"
+
+# Normalize category: accept bare stableId (4) or full formula (=zategory4)
+if [[ "$CATEGORY" =~ ^[0-9]+$ ]]; then
+  CATEGORY="=zategory${CATEGORY}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOKEN=$("$SCRIPT_DIR/get_token.sh")
@@ -43,6 +48,15 @@ RESULT=$(curl -sf -X POST \
   -d "$BODY")
 
 UPDATED_RANGE=$(echo "$RESULT" | jq -r '.updates.updatedRange // "unknown"')
+
+# Patch category cell with USER_ENTERED so =zategoryN evaluates as a formula (not literal text)
+ROW=$(echo "$UPDATED_RANGE" | grep -oE '[0-9]+$')
+CAT_BODY=$(jq -n --arg cat "$CATEGORY" '{"values": [[($cat)]]}')
+curl -sf -X PUT \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21G${ROW}?valueInputOption=USER_ENTERED" \
+  -d "$CAT_BODY" > /dev/null
 
 # Update masterData timestamp in Dontedit J9 so SB_LIVE knows to re-sync
 ISO_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")

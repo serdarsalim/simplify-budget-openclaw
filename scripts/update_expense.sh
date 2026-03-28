@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Updates an existing expense row by transaction ID
-# Usage: update_expense.sh <transaction_id> <amount> =category<stableId> <description> <YYYY-MM-DD> [account]
+# Usage: update_expense.sh <transaction_id> <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account]
 set -euo pipefail
 
 TRANSACTION_ID="$1"
@@ -9,6 +9,11 @@ CATEGORY="$3"
 DESCRIPTION="$4"
 DATE_INPUT="$5"
 ACCOUNT="${6:-Cash}"
+
+# Normalize category: accept bare stableId (4) or full formula (=zategory4)
+if [[ "$CATEGORY" =~ ^[0-9]+$ ]]; then
+  CATEGORY="=zategory${CATEGORY}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOKEN=$("$SCRIPT_DIR/get_token.sh")
@@ -48,12 +53,20 @@ BODY=$(jq -n \
   --arg acc "$ACCOUNT" \
   '{"values": [[($tid), ($dt), ($amt), ($cat), ($desc), "🤖", "", ($acc)]]}')
 
-# Update the specific row
+# Update the specific row (RAW so date stays as string)
 curl -sf -X PUT \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D${SHEET_ROW}%3AK${SHEET_ROW}?valueInputOption=RAW" \
   -d "$BODY" > /dev/null
+
+# Patch category cell with USER_ENTERED so =zategoryN evaluates as a formula
+CAT_BODY=$(jq -n --arg cat "$CATEGORY" '{"values": [[($cat)]]}')
+curl -sf -X PUT \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21G${SHEET_ROW}?valueInputOption=USER_ENTERED" \
+  -d "$CAT_BODY" > /dev/null
 
 # Update masterData timestamp
 ISO_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")

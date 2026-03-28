@@ -1,6 +1,6 @@
 ---
 name: simplify-budget
-description: "Log expenses to Simplify Budget Google Sheet via exec. Workflow: 1) Run: bash ~/.openclaw/skills/simplify-budget/scripts/get_categories.sh (returns stableId<TAB>fullName lines). 2) Match description to closest category name (coffee/restaurant=Dining Out, supermarket=Groceries, uber/taxi=Transport). 3) Run: bash ~/.openclaw/skills/simplify-budget/scripts/write_expense.sh AMOUNT =categorySTABLEID \"DESCRIPTION\" YYYY-MM-DD (e.g. =category4 for Dining Out). Default date=today, account=Cash. GOOGLE_SA_FILE and SPREADSHEET_ID are pre-set. Confirm to user when done."
+description: "Log expenses to Simplify Budget Google Sheet. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Workflow: 1) exec: bash ~/.openclaw/skills/simplify-budget/scripts/get_categories.sh (returns stableId<TAB>fullName). 2) Match to closest category, note the stableId number. 3) exec: bash ~/.openclaw/skills/simplify-budget/scripts/write_expense.sh AMOUNT STABLEID DESCRIPTION YYYY-MM-DD (pass the stableId number, e.g. 4 for Dining Out). Default date=today, account=Cash. Just do it — no questions."
 version: 1.0.0
 user-invocable: true
 metadata:
@@ -38,12 +38,12 @@ Required environment variables:
 The Simplify Budget sheet has a fixed list of user-defined categories (e.g. "Dining Out 🍽️", "Groceries 🛒", "Transport 🚗"). You MUST:
 1. Always fetch the live category list before writing — never guess or hardcode categories
 2. Match the user's description to the closest category using common sense:
-   - coffee, restaurants, takeaway, lunch, dinner → Dining Out
+   - coffee, restaurants, takeaway, lunch, dinner, pizza, fast food → Dining Out
    - supermarket, groceries, food shopping → Groceries
    - uber, taxi, bus, metro, fuel → Transport
    - etc.
-3. If the match is ambiguous, show the user the list and ask them to pick
-4. Use the EXACT fullName string from the sheet (including emoji) when writing
+3. Always make your best guess — never ask the user to pick a category
+4. Construct the category as `=zategory{stableId}` (e.g. `=zategory4`) — never use the fullName string
 
 ## Workflows
 
@@ -60,16 +60,13 @@ When the user provides an expense (amount + description, with optional date/acco
 2. Extract from the user's message:
    - `amount` — numeric (required). Strip currency symbols. If they say "5 bucks" use 5, "14 euros" use 14.
    - `description` — what they bought/paid for (required)
-   - `category` — match to the fetched category list; construct `=category{stableId}` (e.g. `=category4` for Dining Out, `=category2` for Transport)
+   - `category` — match to the fetched category list; construct `=zategory{stableId}` (e.g. `=zategory4` for Dining Out, `=zategory2` for Transport)
    - `date` — in YYYY-MM-DD format. Default to today if not specified.
    - `account` — default to "Cash" if not specified
 
-3. If you're not confident about the category match, confirm with the user before writing:
-   "I'd put this under [Category]. Does that work?"
-
-4. Write the expense:
+3. Write the expense:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/write_expense.sh "<amount>" "=category<stableId>" "<description>" "<YYYY-MM-DD>" "<account>"
+   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/write_expense.sh "<amount>" "=zategory<stableId>" "<description>" "<YYYY-MM-DD>" "<account>"
    ```
 
 5. Confirm to the user in a friendly, concise way:
@@ -98,7 +95,7 @@ When the user says things like "fix that", "that was wrong", "change the amount"
 
 5. Run the update with the corrected values (keep unchanged fields as-is):
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/update_expense.sh "<transaction_id>" "<amount>" "<category_fullname>" "<description>" "<YYYY-MM-DD>" "<account>"
+   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/update_expense.sh "<transaction_id>" "<amount>" "=zategory<stableId>" "<description>" "<YYYY-MM-DD>" "<account>"
    ```
 
 6. Confirm: "✅ Updated — now [description] — [amount] under [category]"
