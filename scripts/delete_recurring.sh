@@ -20,11 +20,11 @@ ROW_JSON="$(find_recurring_row_json "$RECURRING_ID")" || {
 
 SHEET_ROW="$(echo "$ROW_JSON" | jq -r '.rowNumber')"
 
-CLEAR_BODY='{"values":[["","","","","","","","","","","",""]]}'
-curl -sf -X PUT \
+CLEAR_BODY='{}'
+curl -sf -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Recurring%21C${SHEET_ROW}%3AN${SHEET_ROW}?valueInputOption=RAW" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Recurring%21C${SHEET_ROW}%3AN${SHEET_ROW}:clear" \
   -d "$CLEAR_BODY" > /dev/null
 
 update_recurring_timestamp

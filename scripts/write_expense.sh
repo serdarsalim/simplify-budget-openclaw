@@ -53,23 +53,15 @@ BODY=$(jq -n \
   --arg acc "$ACCOUNT" \
   '{"values": [[($tid), ($dt), ($amt), ($cat), ($desc), "🤖", ($notes), ($acc)]]}')
 
-# Append to Expenses sheet (RAW so date stays as string, not converted to serial)
-RESULT=$(curl -sf -X POST \
+# Write directly to the next row after the last real ledger row.
+ROW="$(find_next_expense_append_row)"
+RESULT=$(curl -sf -X PUT \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D%3AK:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D${ROW}%3AK${ROW}?valueInputOption=USER_ENTERED" \
   -d "$BODY")
 
 UPDATED_RANGE=$(echo "$RESULT" | jq -r '.updates.updatedRange // "unknown"')
-
-# Patch category cell with USER_ENTERED so =zategoryN evaluates as a formula (not literal text)
-ROW=$(echo "$UPDATED_RANGE" | grep -oE '[0-9]+$')
-CAT_BODY=$(jq -n --arg cat "$CATEGORY" '{"values": [[($cat)]]}')
-curl -sf -X PUT \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21G${ROW}?valueInputOption=USER_ENTERED" \
-  -d "$CAT_BODY" > /dev/null
 
 update_master_timestamp
 

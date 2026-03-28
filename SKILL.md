@@ -88,6 +88,13 @@ When the user provides an expense (amount + description, with optional date/acco
    bash <skill_dir>/scripts/write_expense.sh "<amount_or_amount_with_currency>" "=zategory<stableId>" "<description>" "<YYYY-MM-DD>" "<account>" "<notes>"
    ```
 
+   If the user asks to add multiple expenses in one message, split them into separate `write_expense.sh` calls. Never try to pass multiple amounts into one command.
+   Examples:
+   - `add 3 test expenses with 1 2 and 3 euro`
+   - run three separate writes for `1`, `2`, and `3`
+   - use distinct descriptions like `test expense 1 euro`, `test expense 2 euro`, `test expense 3 euro`
+   - keep the same date/account defaults unless the user says otherwise
+
 4. Confirm to the user in a friendly, concise way:
    "✅ Logged [description] — [amount] under [actual resolved category] on [date]"
    Include notes only when present.
@@ -176,6 +183,29 @@ When the user wants to change or delete a recurring item in the `Recurring` tab:
    bash <skill_dir>/scripts/delete_recurring.sh "<recurring_id>"
    ```
 5. Confirm concisely what changed.
+
+### Add a recurring item
+
+When the user wants to add a recurring expense or recurring income to the `Recurring` tab:
+
+1. Extract:
+   - `start_date` in `YYYY-MM-DD`
+   - `name`
+   - `category` must use the live active category list; never invent a category
+   - `type` as `expense` or `income`
+   - `frequency` as `Monthly`, `Quarterly`, or `Yearly`
+   - `amount`
+   - optional `account`, `end_date`, `notes`, `source`
+2. Write it with:
+   ```
+   bash <skill_dir>/scripts/write_recurring.sh "<YYYY-MM-DD>" "<name>" "<category>" "<expense_or_income>" "<Monthly_or_Quarterly_or_Yearly>" "<amount>" "<account>" "<YYYY-MM-DD_optional_end_date>" "<notes>" "<source>"
+   ```
+3. This must reuse the first empty row in `Recurring` starting from row 6, matching the SB_LIVE hole-reuse behavior.
+4. Recurring categories follow SB_LIVE rules:
+   - expense recurring items must store a `=zategory<stableId>` formula derived from the live category list
+   - recurring income is the only case that may store the literal `Income 💵`
+5. Never ask the user to pick a category unless they explicitly want to choose. Best-match into an existing category.
+6. Confirm concisely.
 
 ### Fix or correct income
 

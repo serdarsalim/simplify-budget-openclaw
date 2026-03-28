@@ -44,10 +44,11 @@ BODY=$(jq -n \
   --arg notes "$NOTES" \
   '{"values": [[($tid), ($dt), ($amt), ($name), ($acc), ($src), ($notes)]]}')
 
-RESULT=$(curl -sf -X POST \
+ROW="$(find_next_income_append_row)"
+RESULT=$(curl -sf -X PUT \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Income%21D%3AJ:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Income%21D${ROW}%3AJ${ROW}?valueInputOption=USER_ENTERED" \
   -d "$BODY")
 
 UPDATED_RANGE=$(echo "$RESULT" | jq -r '.updates.updatedRange // "unknown"')

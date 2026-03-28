@@ -86,6 +86,10 @@ elif [ "$SOURCE_INPUT" != "__KEEP__" ]; then
   SOURCE="$SOURCE_INPUT"
 fi
 
+if [ "$CATEGORY" != "__KEEP__" ]; then
+  CATEGORY="$(resolve_recurring_category_input "$CATEGORY" "$TYPE_VALUE")"
+fi
+
 python3 - "$START_DATE_ISO" "$END_DATE_ISO" "$TYPE_VALUE" "$FREQUENCY" <<'PY'
 import sys
 from datetime import datetime

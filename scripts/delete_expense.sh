@@ -21,11 +21,11 @@ ROW_JSON="$(find_expense_row_json "$TRANSACTION_ID")" || {
 
 SHEET_ROW="$(echo "$ROW_JSON" | jq -r '.rowNumber')"
 
-CLEAR_BODY='{"values":[["","","","","","","",""]]}'
-curl -sf -X PUT \
+CLEAR_BODY='{}'
+curl -sf -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D${SHEET_ROW}%3AK${SHEET_ROW}?valueInputOption=RAW" \
+  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D${SHEET_ROW}%3AK${SHEET_ROW}:clear" \
   -d "$CLEAR_BODY" > /dev/null
 
 update_master_timestamp

@@ -54,6 +54,66 @@ fetch_recurring_values() {
     "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${RECURRING_RANGE_ENCODED}"
 }
 
+find_next_expense_append_row() {
+  local data
+  data="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21D5%3AD")"
+  JSON_PAYLOAD="$data" python3 - <<'PY'
+import json
+import os
+payload = json.loads(os.environ["JSON_PAYLOAD"])
+rows = payload.get("values", [])
+start_row = 5
+for idx, row in enumerate(rows):
+    value = row[0].strip() if row and len(row) > 0 and isinstance(row[0], str) else ""
+    if not value:
+        print(start_row + idx)
+        raise SystemExit(0)
+print(start_row + len(rows))
+PY
+}
+
+find_next_income_append_row() {
+  local data
+  data="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Income%21D5%3AD")"
+  JSON_PAYLOAD="$data" python3 - <<'PY'
+import json
+import os
+payload = json.loads(os.environ["JSON_PAYLOAD"])
+rows = payload.get("values", [])
+start_row = 5
+for idx, row in enumerate(rows):
+    value = row[0].strip() if row and len(row) > 0 and isinstance(row[0], str) else ""
+    if not value:
+        print(start_row + idx)
+        raise SystemExit(0)
+print(start_row + len(rows))
+PY
+}
+
+find_next_recurring_append_row() {
+  local data
+  data="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Recurring%21C6%3AC")"
+  JSON_PAYLOAD="$data" python3 - <<'PY'
+import json
+import os
+payload = json.loads(os.environ["JSON_PAYLOAD"])
+rows = payload.get("values", [])
+start_row = 6
+for idx, row in enumerate(rows):
+    value = row[0].strip() if row and len(row) > 0 and isinstance(row[0], str) else ""
+    if not value:
+        print(start_row + idx)
+        raise SystemExit(0)
+print(start_row + len(rows))
+PY
+}
+
 sheet_display_to_iso() {
   python3 - "$1" <<'PY'
 import sys
@@ -126,6 +186,62 @@ normalize_category_formula() {
   else
     printf '%s\n' "$category"
   fi
+}
+
+resolve_recurring_category_input() {
+  local category="$1"
+  local type_value="$2"
+
+  if [[ "$(printf '%s' "$type_value" | tr '[:upper:]' '[:lower:]')" =~ ^(false|income|incomes|0|no)$ ]]; then
+    printf 'Income 💵\n'
+    return 0
+  fi
+
+  if [[ "$category" =~ ^=zategory[0-9]+$ ]]; then
+    printf '%s\n' "$category"
+    return 0
+  fi
+
+  if [[ "$category" =~ ^[0-9]+$ ]]; then
+    normalize_category_formula "$category"
+    return 0
+  fi
+
+  local categories match
+  categories="$(bash "${SCRIPT_DIR}/get_categories.sh")"
+  match="$(CATEGORIES="$categories" python3 - "$category" <<'PY'
+import os
+import sys
+
+needle = sys.argv[1].strip().lower()
+lines = [line.rstrip("\n") for line in os.environ.get("CATEGORIES", "").splitlines() if line.strip()]
+
+def norm(s):
+    return "".join(ch.lower() for ch in s if ch.isalnum() or ch.isspace()).strip()
+
+needle_norm = norm(needle)
+best = ""
+for line in lines:
+    stable_id, full_name = line.split("\t", 1)
+    full_norm = norm(full_name)
+    if needle_norm and needle_norm in full_norm:
+        print(stable_id)
+        raise SystemExit(0)
+    if not best and needle_norm and any(tok in full_norm for tok in needle_norm.split()):
+        best = stable_id
+
+if best:
+    print(best)
+    raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+)" || {
+    echo "Error: recurring category '$category' is not in the active category list" >&2
+    return 1
+  }
+
+  normalize_category_formula "$match"
 }
 
 fetch_fx_rates_json() {
