@@ -30,12 +30,27 @@ fi
 
 EXPENSES_RANGE_ENCODED="Expenses%21D5%3AK"
 EXPENSES_RANGE_A1="Expenses!D5:K"
+INCOME_RANGE_ENCODED="Income%21D5%3AJ"
+INCOME_RANGE_A1="Income!D5:J"
+RECURRING_RANGE_ENCODED="Recurring%21C6%3AN500"
 FX_CACHE_FILE="${TMPDIR:-/tmp}/simplify-budget-ecb-rates.json"
 
 fetch_expenses_values() {
   curl -sf \
     -H "Authorization: Bearer ${TOKEN}" \
     "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${EXPENSES_RANGE_ENCODED}"
+}
+
+fetch_income_values() {
+  curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${INCOME_RANGE_ENCODED}"
+}
+
+fetch_recurring_values() {
+  curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${RECURRING_RANGE_ENCODED}"
 }
 
 sheet_display_to_iso() {
@@ -48,7 +63,7 @@ if not raw:
     print("")
     raise SystemExit(0)
 
-for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%-d-%b-%Y", "%-m/%-d/%Y"):
+for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%d %b %Y", "%-d-%b-%Y", "%-m/%-d/%Y", "%-d %b %Y"):
     try:
         print(datetime.strptime(raw, fmt).strftime("%Y-%m-%d"))
         raise SystemExit(0)
@@ -67,6 +82,17 @@ from datetime import datetime
 raw = sys.argv[1].strip()
 dt = datetime.strptime(raw, "%Y-%m-%d")
 print(f"{dt.day}-{dt.strftime('%b')}-{dt.year}")
+PY
+}
+
+iso_to_income_display() {
+  python3 - "$1" <<'PY'
+import sys
+from datetime import datetime
+
+raw = sys.argv[1].strip()
+dt = datetime.strptime(raw, "%Y-%m-%d")
+print(f"{dt.day} {dt.strftime('%b')} {dt.year}")
 PY
 }
 
@@ -382,6 +408,77 @@ for idx, row in enumerate(row_data):
         "label": string_from_cell(padded[5]),
         "notes": string_from_cell(padded[6]),
         "account": string_from_cell(padded[7]),
+    }
+    print(json.dumps(result))
+    raise SystemExit(0)
+
+raise SystemExit(1)
+' "$transaction_id" <<<"$data"
+}
+
+find_income_row_json() {
+  local transaction_id="$1"
+  local data
+  data="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?ranges=Income%21D5%3AJ&includeGridData=true&fields=sheets(data(rowData(values(formattedValue,userEnteredValue,effectiveValue))))")"
+  python3 -c '
+import json
+import sys
+from datetime import datetime
+
+transaction_id = sys.argv[1]
+payload = json.load(sys.stdin)
+row_data = (
+    payload.get("sheets", [{}])[0]
+    .get("data", [{}])[0]
+    .get("rowData", [])
+)
+
+def string_from_cell(cell):
+    if "formattedValue" in cell:
+        return cell["formattedValue"]
+    user = cell.get("userEnteredValue", {})
+    if "stringValue" in user:
+        return user["stringValue"]
+    if "formulaValue" in user:
+        return user["formulaValue"]
+    effective = cell.get("effectiveValue", {})
+    if "numberValue" in effective:
+        number = effective["numberValue"]
+        return str(int(number) if float(number).is_integer() else number)
+    return ""
+
+def to_iso(raw):
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return raw
+
+for idx, row in enumerate(row_data):
+    cells = row.get("values", [])
+    padded = cells + [{}] * (7 - len(cells))
+    transaction = string_from_cell(padded[0])
+    if transaction != transaction_id:
+        continue
+    amount_effective = padded[2].get("effectiveValue", {}).get("numberValue")
+    amount_number = "" if amount_effective is None else str(int(amount_effective) if float(amount_effective).is_integer() else amount_effective)
+    result = {
+        "rowNumber": idx + 5,
+        "transactionId": transaction,
+        "dateDisplay": string_from_cell(padded[1]),
+        "dateIso": to_iso(string_from_cell(padded[1])),
+        "amount": string_from_cell(padded[2]),
+        "amountNumber": amount_number,
+        "name": string_from_cell(padded[3]),
+        "account": string_from_cell(padded[4]),
+        "source": string_from_cell(padded[5]),
+        "notes": string_from_cell(padded[6]),
     }
     print(json.dumps(result))
     raise SystemExit(0)

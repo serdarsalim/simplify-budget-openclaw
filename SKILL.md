@@ -1,6 +1,6 @@
 ---
 name: simplify-budget
-description: "Log, find, update, and delete expenses in the Simplify Budget Google Sheet. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Workflow: 1) exec get_categories.sh and match a live category. 2) exec write_expense.sh with amount, category, description, date, optional account, optional notes. 3) For edits/deletes, exec find_expenses.sh first, then mutate by transaction id with update_expense.sh or delete_expense.sh. Amounts are always stored in the configured tracker currency. Default date=today, account=Cash. Just do it."
+description: "Log, find, update, and delete expenses and income in the Simplify Budget Google Sheet, and answer read-only recurring schedule questions. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Expenses use live categories. Income uses name, account, source, and notes. For edits/deletes, find rows first, then mutate by transaction id. Amounts are always stored in the configured tracker currency. Just do it."
 version: 1.0.0
 user-invocable: true
 metadata:
@@ -19,7 +19,7 @@ metadata:
         - openssl
 ---
 
-# Simplify Budget Expense Tracker
+# Simplify Budget Tracker
 
 > **CRITICAL EXECUTION RULE**: You MUST use the `exec` tool to run the bash scripts below. Do NOT call `sessions_spawn`. Do NOT create ACP sessions. These are standalone shell scripts. Resolve script paths relative to this skill directory and run the resulting absolute path with `exec`.
 
@@ -30,6 +30,8 @@ metadata:
 - The user asks to search for or identify an existing expense
 - The user asks what they've spent or asks about their budget
 - The user wants to add an expense to their budget tracker
+- The user wants to log income, salary, withdrawal, remittance, sale proceeds, or any other incoming money
+- The user asks what recurring payments are due this month, when something recurring is due, or what subscriptions are upcoming
 
 ## Configuration
 Required environment variables:
@@ -103,6 +105,87 @@ When the user wants to inspect, fix, or delete an expense, resolve it from the s
 3. Matching MUST consider both `description` and `notes`.
 4. If one clear match exists, proceed. If multiple plausible matches exist, ask one short disambiguation question.
 
+### Log a new income
+
+When the user provides income (amount + name, with optional date/account/source/notes):
+
+1. Extract from the user's message:
+   - `amount` — required. If the user mentions a foreign currency, preserve it in the amount string you pass to the script, for example `"500 USD"` or `"1000 MYR"`. If they give no currency, pass a plain number.
+   - `name` — required. This is the income title, e.g. `Salary`, `BMW Sale`, `Etoro withdrawal`
+   - `date` — in YYYY-MM-DD format. Default to today if not specified.
+   - `account` — default to `Other` if not specified.
+   - `source` — default to `Other` if not specified. Use the user’s wording when it is clear, e.g. `Salary`, `Capital Gains`, `Remittance`, `Crypto`, `MTS`.
+   - `notes` — optional supporting context.
+
+2. Write the income:
+   ```
+   bash <skill_dir>/scripts/write_income.sh "<amount_or_amount_with_currency>" "<name>" "<YYYY-MM-DD>" "<account>" "<source>" "<notes>"
+   ```
+
+3. Confirm to the user in a concise way:
+   "✅ Logged income [name] — [amount] into [account] from [source] on [date]"
+   Include notes only when present.
+
+### Find or inspect income
+
+When the user wants to inspect, fix, or delete income, resolve it from the sheet first:
+
+1. Build a short natural-language query from the user's message.
+2. Search the sheet:
+   ```
+   bash <skill_dir>/scripts/find_income.sh "<query>" 10
+   ```
+3. Matching MUST consider `name`, `source`, and `notes`.
+4. If one clear match exists, proceed. If multiple plausible matches exist, ask one short disambiguation question.
+
+### Inspect recurring schedule
+
+When the user asks read-only recurring questions like:
+- `what is due this month`
+- `when is capcut due`
+- `what subscriptions are due next`
+
+Use the recurring query script. Do NOT write anything into `Expenses` or `Income`.
+
+Examples:
+```
+bash <skill_dir>/scripts/find_recurring.sh --month 2026-03
+bash <skill_dir>/scripts/find_recurring.sh --query "CapCut" --date 2026-03-28
+bash <skill_dir>/scripts/find_recurring.sh --query "CapCut" --mode next --date 2026-03-28
+```
+
+Rules:
+1. This is read-only. Never materialize recurring rows into the ledgers.
+2. The script calculates cycles from `Recurring` using the same recurrence rules as the existing Apps Script logic.
+3. For month-style questions, return the current-month cycle entries.
+4. For `when is X due`, prefer `--mode next`.
+5. Respond concisely with the due date, amount, account, and whether it is expense or income.
+
+### Fix or correct income
+
+When the user wants to change amount, name, date, account, source, or notes for an income row:
+
+1. Resolve the target income from the sheet using `find_income.sh`. Do NOT trust chat memory as the source of truth.
+2. Infer the correction from their message. If the new amount is in a foreign currency, preserve that currency in the amount argument you pass to the script.
+3. Run the update. Use `__KEEP__` for unchanged fields and `__CLEAR__` to blank notes:
+   ```
+   bash <skill_dir>/scripts/update_income.sh "<transaction_id>" "<amount_or_amount_with_currency_or___KEEP__>" "<name_or___KEEP__>" "<YYYY-MM-DD_or___KEEP__>" "<account_or___KEEP__>" "<source_or___KEEP__>" "<notes_or___KEEP___or___CLEAR__>"
+   ```
+4. Confirm: "✅ Updated income — now [name] — [amount] into [account] from [source]"
+
+### Delete income
+
+If the user asks to undo or delete an income entry:
+
+1. Resolve the target income from the sheet using `find_income.sh`.
+2. If there is one clear match, clear the row by transaction id:
+   ```
+   bash <skill_dir>/scripts/delete_income.sh "<transaction_id>"
+   ```
+3. Confirm that the income row was cleared.
+4. Never delete sheet rows. Clear the existing row contents instead.
+
+
 ### Fix or correct the last expense
 
 When the user says things like "fix that", "that was wrong", "change the amount", "put that under X instead", "it was 4 not 5":
@@ -140,13 +223,17 @@ If the user asks to undo or delete an entry:
 - Never hardcode category names — always fetch them live
 - Never claim a category that does not exist in the live category list
 - For new expenses, always best-match into one of the real categories and tell the user which category was used
+- For income, never invent hidden structure. Use the explicit `name`, `account`, `source`, and `notes` columns on the Income tab.
 - Never show raw script output to the user — parse it and respond naturally
 - Always confirm what you logged — the user should never have to guess if it worked
 - If a script returns an error, tell the user clearly and do not silently retry
 - Default date is always today in the user's local timezone
 - Default account is always "Cash" unless the user specifies otherwise
+- Default income account is always "Other" unless the user specifies otherwise
+- Default income source is always "Other" unless the user specifies otherwise
 - Amounts are always stored as plain numbers in `TRACKER_CURRENCY`
 - If a foreign currency is provided, keep it in the script input and let the script convert it into `TRACKER_CURRENCY`
 - Notes are a first-class field. Search them, preserve them on update unless changed, and clear them on delete.
 - For edits and deletes, the sheet is the source of truth. Resolve the target row from the sheet before mutating anything.
+- Recurring schedule questions are read-only. Never create expense or income rows just because the user asked what is due.
 - The 🤖 label on written rows identifies bot-added entries in the sheet
