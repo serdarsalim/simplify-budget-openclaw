@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Updates an existing expense row by transaction ID.
 # Use __KEEP__ to preserve the current value and __CLEAR__ to blank notes.
-# Usage: update_expense.sh <transaction_id> <amount|__KEEP__> <category|__KEEP__> <description|__KEEP__> <YYYY-MM-DD|__KEEP__> [account|__KEEP__] [notes|__KEEP__|__CLEAR__]
+# Usage: update_expense.sh <transaction_id> <amount|amount with currency|__KEEP__> <category|__KEEP__> <description|__KEEP__> <YYYY-MM-DD|__KEEP__> [account|__KEEP__] [notes|__KEEP__|__CLEAR__]
 set -euo pipefail
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: update_expense.sh <transaction_id> <amount|__KEEP__> <category|__KEEP__> <description|__KEEP__> <YYYY-MM-DD|__KEEP__> [account|__KEEP__] [notes|__KEEP__|__CLEAR__]"
+  echo "Usage: update_expense.sh <transaction_id> <amount|amount with currency|__KEEP__> <category|__KEEP__> <description|__KEEP__> <YYYY-MM-DD|__KEEP__> [account|__KEEP__] [notes|__KEEP__|__CLEAR__]"
   exit 1
 fi
 
@@ -36,9 +36,6 @@ CURRENT_ACCOUNT="$(echo "$ROW_JSON" | jq -r '.account')"
 SHEET_ROW="$(echo "$ROW_JSON" | jq -r '.rowNumber')"
 
 AMOUNT="$CURRENT_AMOUNT"
-if [ "$AMOUNT_INPUT" != "__KEEP__" ]; then
-  AMOUNT="$AMOUNT_INPUT"
-fi
 
 CATEGORY="$CURRENT_CATEGORY"
 if [ "$CATEGORY_INPUT" != "__KEEP__" ]; then
@@ -65,6 +62,12 @@ if [ "$NOTES_INPUT" = "__CLEAR__" ]; then
   NOTES=""
 elif [ "$NOTES_INPUT" != "__KEEP__" ]; then
   NOTES="$NOTES_INPUT"
+fi
+
+if [ "$AMOUNT_INPUT" != "__KEEP__" ]; then
+  AMOUNT_JSON="$(resolve_amount_and_notes_json "$AMOUNT_INPUT" "$NOTES")"
+  AMOUNT="$(echo "$AMOUNT_JSON" | jq -r '.amount')"
+  NOTES="$(echo "$AMOUNT_JSON" | jq -r '.notes')"
 fi
 
 python3 - "$AMOUNT" "$DATE_ISO" <<'PY'

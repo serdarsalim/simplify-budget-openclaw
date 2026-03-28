@@ -1,6 +1,6 @@
 ---
 name: simplify-budget
-description: "Log, find, update, and delete expenses in the Simplify Budget Google Sheet. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Workflow: 1) exec get_categories.sh and match a live category. 2) exec write_expense.sh with amount, category, description, date, optional account, optional notes. 3) For edits/deletes, exec find_expenses.sh first, then mutate by transaction id with update_expense.sh or delete_expense.sh. Default date=today, account=Cash. Just do it."
+description: "Log, find, update, and delete expenses in the Simplify Budget Google Sheet. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Workflow: 1) exec get_categories.sh and match a live category. 2) exec write_expense.sh with amount, category, description, date, optional account, optional notes. 3) For edits/deletes, exec find_expenses.sh first, then mutate by transaction id with update_expense.sh or delete_expense.sh. Amounts are always stored in the configured tracker currency. Default date=today, account=Cash. Just do it."
 version: 1.0.0
 user-invocable: true
 metadata:
@@ -11,6 +11,7 @@ metadata:
       env:
         - GOOGLE_SA_FILE
         - SPREADSHEET_ID
+        - TRACKER_CURRENCY
       bins:
         - curl
         - jq
@@ -20,7 +21,7 @@ metadata:
 
 # Simplify Budget Expense Tracker
 
-> **CRITICAL EXECUTION RULE**: You MUST use the `exec` tool to run the bash scripts below. Do NOT call `sessions_spawn`. Do NOT create ACP sessions. These are standalone shell scripts — just run them with `exec` and the absolute path `/Users/slm/.openclaw/skills/simplify-budget/scripts/<script>.sh`.
+> **CRITICAL EXECUTION RULE**: You MUST use the `exec` tool to run the bash scripts below. Do NOT call `sessions_spawn`. Do NOT create ACP sessions. These are standalone shell scripts. Resolve script paths relative to this skill directory and run the resulting absolute path with `exec`.
 
 ## When to use
 - The user mentions spending money, making a purchase, paying for something
@@ -34,6 +35,18 @@ metadata:
 Required environment variables:
 - `GOOGLE_SA_FILE` — absolute path to the Google service account JSON file
 - `SPREADSHEET_ID` — the Simplify Budget spreadsheet ID
+- `TRACKER_CURRENCY` — the base currency code for the tracker (for example `EUR`)
+
+Optional environment variables:
+- `TRACKER_CURRENCY_SYMBOL` — display symbol for the base currency (for example `€`)
+
+## Currency Rules
+- The configured `TRACKER_CURRENCY` is the system of record for stored amounts.
+- If the user gives an amount without a currency, assume it is already in `TRACKER_CURRENCY`.
+- If the user gives an explicit foreign currency, keep that currency in the amount argument you pass to the script, for example `"50 MYR"` or `"12 USD"`.
+- The scripts fetch a live ECB FX rate, convert into `TRACKER_CURRENCY`, and store the converted amount in the sheet.
+- When conversion happens, the scripts append an `[auto-fx]` audit line to `notes` with the original amount, converted amount, rate, and rate date.
+- Never read the sheet to discover the base currency during normal operation. Use the configured environment instead.
 
 ## Category Matching Rules
 The Simplify Budget sheet has a fixed list of user-defined categories (e.g. "Dining Out 🍽️", "Groceries 🛒", "Transport 🚗"). You MUST:
@@ -44,7 +57,9 @@ The Simplify Budget sheet has a fixed list of user-defined categories (e.g. "Din
    - uber, taxi, bus, metro, fuel → Transport
    - etc.
 3. Always make your best guess — never ask the user to pick a category
-4. Construct the category as `=zategory{stableId}` (e.g. `=zategory4`) — never use the fullName string
+4. Construct the category as `=zategory{stableId}` (e.g. `=zategory4`) — never use the fullName string as the write input
+5. Only use categories that exist in the live category list. Never invent new category names like "Electronics" if they are not present.
+6. The confirmation message must mention the actual resolved category from the live list, not the model's guessed label.
 
 ## Workflows
 
@@ -54,12 +69,12 @@ When the user provides an expense (amount + description, with optional date/acco
 
 1. Fetch the current active categories:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/get_categories.sh
+   bash <skill_dir>/scripts/get_categories.sh
    ```
    This returns lines of `stableId<TAB>fullName`. Show the fullNames to yourself for matching — do NOT show this raw output to the user.
 
 2. Extract from the user's message:
-   - `amount` — numeric (required). Strip currency symbols. If they say "5 bucks" use 5, "14 euros" use 14.
+   - `amount` — required. If the user mentions a foreign currency, preserve it in the amount string you pass to the script, for example `"50 MYR"` or `"12 USD"`. If they give no currency, pass a plain number like `10`.
    - `description` — what they bought/paid for (required)
    - `category` — match to the fetched category list; construct `=zategory{stableId}` (e.g. `=zategory4` for Dining Out, `=zategory2` for Transport)
    - `date` — in YYYY-MM-DD format. Default to today if not specified.
@@ -68,12 +83,13 @@ When the user provides an expense (amount + description, with optional date/acco
 
 3. Write the expense:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/write_expense.sh "<amount>" "=zategory<stableId>" "<description>" "<YYYY-MM-DD>" "<account>" "<notes>"
+   bash <skill_dir>/scripts/write_expense.sh "<amount_or_amount_with_currency>" "=zategory<stableId>" "<description>" "<YYYY-MM-DD>" "<account>" "<notes>"
    ```
 
 4. Confirm to the user in a friendly, concise way:
-   "✅ Logged [description] — [amount] under [category] on [date]"
+   "✅ Logged [description] — [amount] under [actual resolved category] on [date]"
    Include notes only when present.
+   Always name the category you actually used.
 
 ### Find or inspect expenses
 
@@ -82,7 +98,7 @@ When the user wants to inspect, fix, or delete an expense, resolve it from the s
 1. Build a short natural-language query from the user's message.
 2. Search the sheet:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/find_expenses.sh "<query>" 10
+   bash <skill_dir>/scripts/find_expenses.sh "<query>" 10
    ```
 3. Matching MUST consider both `description` and `notes`.
 4. If one clear match exists, proceed. If multiple plausible matches exist, ask one short disambiguation question.
@@ -93,20 +109,21 @@ When the user says things like "fix that", "that was wrong", "change the amount"
 
 1. Resolve the target expense from the sheet using `find_expenses.sh`. Do NOT trust chat memory as the source of truth.
 
-2. Ask for or infer the correction from their message (amount, category, description, date, account, or notes).
+2. Ask for or infer the correction from their message (amount, category, description, date, account, or notes). If the new amount is in a foreign currency, preserve that currency in the amount argument you pass to the script.
 
 3. For category corrections, fetch the category list again and match:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/get_categories.sh
+   bash <skill_dir>/scripts/get_categories.sh
    ```
 
 4. Run the update with the corrected values. Use `__KEEP__` for unchanged fields and `__CLEAR__` to blank notes:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/update_expense.sh "<transaction_id>" "<amount_or___KEEP__>" "<=zategory<stableId>_or___KEEP__>" "<description_or___KEEP__>" "<YYYY-MM-DD_or___KEEP__>" "<account_or___KEEP__>" "<notes_or___KEEP___or___CLEAR__>"
+   bash <skill_dir>/scripts/update_expense.sh "<transaction_id>" "<amount_or_amount_with_currency_or___KEEP__>" "<=zategory<stableId>_or___KEEP__>" "<description_or___KEEP__>" "<YYYY-MM-DD_or___KEEP__>" "<account_or___KEEP__>" "<notes_or___KEEP___or___CLEAR__>"
    ```
 
-5. Confirm: "✅ Updated — now [description] — [amount] under [category]"
+5. Confirm: "✅ Updated — now [description] — [amount] under [actual resolved category]"
    Include notes only when present.
+   Always name the category you actually used.
 
 ### Undo / delete last expense
 If the user asks to undo or delete an entry:
@@ -114,19 +131,22 @@ If the user asks to undo or delete an entry:
 1. Resolve the target expense from the sheet using `find_expenses.sh`.
 2. If there is one clear match, clear the row by transaction id:
    ```
-   bash /Users/slm/.openclaw/skills/simplify-budget/scripts/delete_expense.sh "<transaction_id>"
+   bash <skill_dir>/scripts/delete_expense.sh "<transaction_id>"
    ```
 3. Confirm that the expense row was cleared.
 4. Never delete sheet rows. Clear the existing row contents instead.
 
 ## Rules
 - Never hardcode category names — always fetch them live
+- Never claim a category that does not exist in the live category list
+- For new expenses, always best-match into one of the real categories and tell the user which category was used
 - Never show raw script output to the user — parse it and respond naturally
 - Always confirm what you logged — the user should never have to guess if it worked
 - If a script returns an error, tell the user clearly and do not silently retry
 - Default date is always today in the user's local timezone
 - Default account is always "Cash" unless the user specifies otherwise
-- Amounts are always stored as plain numbers (no currency symbols)
+- Amounts are always stored as plain numbers in `TRACKER_CURRENCY`
+- If a foreign currency is provided, keep it in the script input and let the script convert it into `TRACKER_CURRENCY`
 - Notes are a first-class field. Search them, preserve them on update unless changed, and clear them on delete.
 - For edits and deletes, the sheet is the source of truth. Resolve the target row from the sheet before mutating anything.
 - The 🤖 label on written rows identifies bot-added entries in the sheet

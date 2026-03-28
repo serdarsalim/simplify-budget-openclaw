@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Writes a new expense row to the Expenses sheet
-# Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]
+# Usage: write_expense.sh <amount|amount with currency> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]
 set -euo pipefail
 
 if [ "$#" -lt 4 ]; then
-  echo "Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]"
+  echo "Usage: write_expense.sh <amount|amount with currency> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]"
   exit 1
 fi
 
@@ -21,20 +21,17 @@ source "$SCRIPT_DIR/expense_lib.sh"
 
 CATEGORY="$(normalize_category_formula "$CATEGORY_RAW")"
 
-python3 - "$AMOUNT" "$DATE_INPUT" <<'PY'
+python3 - "$DATE_INPUT" <<'PY'
 import sys
 from datetime import datetime
 
-amount = sys.argv[1].strip()
-date_input = sys.argv[2].strip()
-
-try:
-    float(amount)
-except ValueError:
-    raise SystemExit("Error: amount must be numeric")
-
+date_input = sys.argv[1].strip()
 datetime.strptime(date_input, "%Y-%m-%d")
 PY
+
+AMOUNT_JSON="$(resolve_amount_and_notes_json "$AMOUNT" "$NOTES")"
+AMOUNT="$(echo "$AMOUNT_JSON" | jq -r '.amount')"
+NOTES="$(echo "$AMOUNT_JSON" | jq -r '.notes')"
 
 # Generate transaction ID matching SB_LIVE format: ex-{ms_timestamp}-{5_random_chars}
 TIMESTAMP_MS=$(python3 -c "import time; print(int(time.time() * 1000))")
