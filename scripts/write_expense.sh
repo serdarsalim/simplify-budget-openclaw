@@ -1,21 +1,40 @@
 #!/usr/bin/env bash
 # Writes a new expense row to the Expenses sheet
-# Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account]
+# Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]
 set -euo pipefail
 
+if [ "$#" -lt 4 ]; then
+  echo "Usage: write_expense.sh <amount> =zategory<stableId> <description> <YYYY-MM-DD> [account] [notes]"
+  exit 1
+fi
+
 AMOUNT="$1"
-CATEGORY="$2"
+CATEGORY_RAW="$2"
 DESCRIPTION="$3"
 DATE_INPUT="$4"
 ACCOUNT="${5:-Cash}"
-
-# Normalize category: accept bare stableId (4) or full formula (=zategory4)
-if [[ "$CATEGORY" =~ ^[0-9]+$ ]]; then
-  CATEGORY="=zategory${CATEGORY}"
-fi
+NOTES="${6:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOKEN=$("$SCRIPT_DIR/get_token.sh")
+# shellcheck source=/Users/slm/.openclaw/skills/simplify-budget/scripts/expense_lib.sh
+source "$SCRIPT_DIR/expense_lib.sh"
+
+CATEGORY="$(normalize_category_formula "$CATEGORY_RAW")"
+
+python3 - "$AMOUNT" "$DATE_INPUT" <<'PY'
+import sys
+from datetime import datetime
+
+amount = sys.argv[1].strip()
+date_input = sys.argv[2].strip()
+
+try:
+    float(amount)
+except ValueError:
+    raise SystemExit("Error: amount must be numeric")
+
+datetime.strptime(date_input, "%Y-%m-%d")
+PY
 
 # Generate transaction ID matching SB_LIVE format: ex-{ms_timestamp}-{5_random_chars}
 TIMESTAMP_MS=$(python3 -c "import time; print(int(time.time() * 1000))")
@@ -23,11 +42,7 @@ RANDOM_SUFFIX=$(python3 -c "import random, string; print(''.join(random.choices(
 TRANSACTION_ID="ex-${TIMESTAMP_MS}-${RANDOM_SUFFIX}"
 
 # Format date as "1-Jul-2025" (SB_LIVE format)
-FORMATTED_DATE=$(python3 -c "
-from datetime import datetime
-d = datetime.strptime('$DATE_INPUT', '%Y-%m-%d')
-print(str(d.day) + '-' + d.strftime('%b') + '-' + str(d.year))
-")
+FORMATTED_DATE="$(iso_to_sheet_display "$DATE_INPUT")"
 
 # Build JSON body — columns D:K
 # D=transactionId, E=date, F=amount, G=category, H=name, I=label, J=notes, K=account
@@ -37,8 +52,9 @@ BODY=$(jq -n \
   --argjson amt "$AMOUNT" \
   --arg cat "$CATEGORY" \
   --arg desc "$DESCRIPTION" \
+  --arg notes "$NOTES" \
   --arg acc "$ACCOUNT" \
-  '{"values": [[($tid), ($dt), ($amt), ($cat), ($desc), "🤖", "", ($acc)]]}')
+  '{"values": [[($tid), ($dt), ($amt), ($cat), ($desc), "🤖", ($notes), ($acc)]]}')
 
 # Append to Expenses sheet (RAW so date stays as string, not converted to serial)
 RESULT=$(curl -sf -X POST \
@@ -58,14 +74,7 @@ curl -sf -X PUT \
   "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Expenses%21G${ROW}?valueInputOption=USER_ENTERED" \
   -d "$CAT_BODY" > /dev/null
 
-# Update masterData timestamp in Dontedit J9 so SB_LIVE knows to re-sync
-ISO_NOW=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-TS_BODY=$(jq -n --arg ts "$ISO_NOW" '{"values": [[($ts)]]}')
-curl -sf -X PUT \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Dontedit%21J9?valueInputOption=RAW" \
-  -d "$TS_BODY" > /dev/null
+update_master_timestamp
 
 echo "transaction_id=${TRANSACTION_ID}"
 echo "range=${UPDATED_RANGE}"
