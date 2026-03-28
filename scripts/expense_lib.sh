@@ -33,6 +33,7 @@ EXPENSES_RANGE_A1="Expenses!D5:K"
 INCOME_RANGE_ENCODED="Income%21D5%3AJ"
 INCOME_RANGE_A1="Income!D5:J"
 RECURRING_RANGE_ENCODED="Recurring%21C6%3AN500"
+RECURRING_RANGE_A1="Recurring!C6:N500"
 FX_CACHE_FILE="${TMPDIR:-/tmp}/simplify-budget-ecb-rates.json"
 
 fetch_expenses_values() {
@@ -104,6 +105,17 @@ update_master_timestamp() {
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
     "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Dontedit%21J9?valueInputOption=RAW" \
+    -d "$ts_body" > /dev/null
+}
+
+update_recurring_timestamp() {
+  local iso_now ts_body
+  iso_now=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+  ts_body=$(jq -n --arg ts "$iso_now" '{"values": [[($ts)]]}')
+  curl -sf -X PUT \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Dontedit%21J7?valueInputOption=RAW" \
     -d "$ts_body" > /dev/null
 }
 
@@ -485,4 +497,80 @@ for idx, row in enumerate(row_data):
 
 raise SystemExit(1)
 ' "$transaction_id" <<<"$data"
+}
+
+find_recurring_row_json() {
+  local recurring_id="$1"
+  local data
+  data="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?ranges=Recurring%21C6%3AN500&includeGridData=true&fields=sheets(data(rowData(values(formattedValue,userEnteredValue,effectiveValue))))")"
+  python3 -c '
+import json
+import sys
+from datetime import datetime
+
+recurring_id = sys.argv[1]
+payload = json.load(sys.stdin)
+row_data = (
+    payload.get("sheets", [{}])[0]
+    .get("data", [{}])[0]
+    .get("rowData", [])
+)
+
+def string_from_cell(cell):
+    if "formattedValue" in cell:
+        return cell["formattedValue"]
+    user = cell.get("userEnteredValue", {})
+    if "stringValue" in user:
+        return user["stringValue"]
+    if "formulaValue" in user:
+        return user["formulaValue"]
+    effective = cell.get("effectiveValue", {})
+    if "numberValue" in effective:
+        number = effective["numberValue"]
+        return str(int(number) if float(number).is_integer() else number)
+    if "boolValue" in effective:
+        return "TRUE" if effective["boolValue"] else "FALSE"
+    return ""
+
+def to_iso(raw):
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%d-%b-%Y", "%m/%d/%Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return raw
+
+for idx, row in enumerate(row_data):
+    cells = row.get("values", [])
+    padded = cells + [{}] * (12 - len(cells))
+    current_id = string_from_cell(padded[0])
+    if current_id != recurring_id:
+        continue
+    result = {
+        "rowNumber": idx + 6,
+        "recurringId": current_id,
+        "startDateDisplay": string_from_cell(padded[1]),
+        "startDateIso": to_iso(string_from_cell(padded[1])),
+        "name": string_from_cell(padded[2]),
+        "category": string_from_cell(padded[3]),
+        "type": string_from_cell(padded[4]),
+        "frequency": string_from_cell(padded[5]),
+        "amount": string_from_cell(padded[6]),
+        "account": string_from_cell(padded[7]),
+        "endDateDisplay": string_from_cell(padded[8]),
+        "endDateIso": to_iso(string_from_cell(padded[8])),
+        "label": string_from_cell(padded[9]),
+        "notes": string_from_cell(padded[10]),
+        "source": string_from_cell(padded[11]),
+    }
+    print(json.dumps(result))
+    raise SystemExit(0)
+
+raise SystemExit(1)
+' "$recurring_id" <<<"$data"
 }

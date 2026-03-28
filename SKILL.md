@@ -161,6 +161,22 @@ Rules:
 4. For `when is X due`, prefer `--mode next`.
 5. Respond concisely with the due date, amount, account, and whether it is expense or income.
 
+### Fix or delete recurring items
+
+When the user wants to change or delete a recurring item in the `Recurring` tab:
+
+1. Resolve the target recurring row using `find_recurring.sh`.
+2. If one clear match exists, mutate the `Recurring` row itself. Never write anything into `Expenses` or `Income` for this task.
+3. To update a recurring row, use `__KEEP__` for unchanged fields and `__CLEAR__` for optional end date / notes / source:
+   ```
+   bash <skill_dir>/scripts/update_recurring.sh "<recurring_id>" "<YYYY-MM-DD_or___KEEP__>" "<name_or___KEEP__>" "<category_or___KEEP__>" "<expense_or_income_or___KEEP__>" "<Monthly_or_Quarterly_or_Yearly_or___KEEP__>" "<amount_or___KEEP__>" "<account_or___KEEP__>" "<YYYY-MM-DD_or___KEEP___or___CLEAR__>" "<notes_or___KEEP___or___CLEAR__>" "<source_or___KEEP___or___CLEAR__>"
+   ```
+4. To delete a recurring row, clear the row by recurring id:
+   ```
+   bash <skill_dir>/scripts/delete_recurring.sh "<recurring_id>"
+   ```
+5. Confirm concisely what changed.
+
 ### Fix or correct income
 
 When the user wants to change amount, name, date, account, source, or notes for an income row:
