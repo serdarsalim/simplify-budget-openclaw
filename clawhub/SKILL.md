@@ -1,7 +1,7 @@
 ---
 name: simplify-budget
 description: "Log, find, update, and delete expenses and income in the Simplify Budget Google Sheet, and answer read-only recurring schedule questions. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Expenses use live categories. Income uses name, account, source, and notes. For edits/deletes, find rows first, then mutate by transaction id. Amounts are always stored in the configured tracker currency. Just do it."
-version: 1.0.0
+version: 1.1.0
 user-invocable: true
 metadata:
   openclaw:
@@ -170,6 +170,27 @@ When the user wants to inspect, fix, or delete income, resolve it from the sheet
    ```
 3. Matching MUST consider `name`, `source`, and `notes`.
 4. If one clear match exists, proceed. If multiple plausible matches exist, ask one short disambiguation question.
+
+### Read monthly totals
+
+When the user asks summary questions such as:
+- `what's my income this month`
+- `what did I spend this month`
+- `what are this month's totals`
+- `how much did I save this month`
+
+Do NOT rebuild these totals from ledger rows unless the user explicitly asks for line-item reconstruction.
+
+Instead, read the monthly summary from `Dontedit`:
+```
+bash <skill_dir>/scripts/find_summary.sh --month 2026-03
+```
+
+Rules:
+1. This is read-only.
+2. `Dontedit` is the source of truth for monthly totals.
+3. Use `Expenses` / `Income` only when the user asks for detailed entries, not when they ask for top-line monthly totals.
+4. Respond concisely with income, spending, and savings when available.
 
 ### Inspect recurring schedule
 

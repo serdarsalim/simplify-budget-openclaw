@@ -1,7 +1,7 @@
 ---
 name: simplify-budget
 description: "Log, find, update, and delete expenses and income in the Simplify Budget Google Sheet, and answer read-only recurring schedule questions. NEVER use sessions_spawn or ACP — ONLY use the exec tool to run bash scripts. Expenses use live categories. Income uses name, account, source, and notes. For edits/deletes, find rows first, then mutate by transaction id. Amounts are always stored in the configured tracker currency. Just do it."
-version: 1.0.0
+version: 1.1.0
 user-invocable: true
 metadata:
   openclaw:
